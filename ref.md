@@ -1,5 +1,5 @@
 **ROS 2 + OpenCV 기반으로, 차선 인식 → 자율주행 → ArUco 마커 감지 후 작업 수행까지 연결되는 모바일 매니퓰레이터 시스템을 구현했습니다.**
-**비정형 환경에서도 견고한 주행을 위해 전처리 기반 차선 인식 개선과 상태 기반 주행 복구 제어를 적용하였고, 미션 기반 이동 후 ArUco 마커를 인식하여 후속 작업을 수행하도록 구현했습니다.**
+**조명 변화 등 비정형 환경에서도 견고하게 주행할 수 있도록 전처리 기반 차선 인식 개선과 상태 기반 복구 제어를 적용했으며, 미션 기반 주행 후 ArUco 마커 인식을 통해 작업 수행까지 자동화했습니다.**
 
 ---
 
@@ -16,8 +16,8 @@
 | 이름           | 역할                                        |
 | ------------ | ----------------------------------------- |
 | **이세현(작성자)** | **이미지 전처리, 차선 주행 알고리즘 구현, 시뮬 환경 구성, GUI 제작** |
-| 강인우          | 시뮬레이션 제어 태스크, 이미지 전처리, 횡단보도 정지 알고리즘 구현  |
-| 이형연          | ArUco 마커 인식, 매니퓰레이터 제어 로직 및 표지판 인식 학습     |
+| 강인우          | 시뮬레이션 제어, 보조 전처리 및 횡단보도 정지선 인식 로직 구현  |
+| 이형연          | ArUco 마커 인식 및 매니퓰레이터 제어, 표지판 인식 모델 학습     |
 
 <br>
 
@@ -50,7 +50,7 @@
       ros2 run turtlebot_moveit turtlebot_arm_controller
       ```
    
-   - **카메라 및 전처리 노드 실행**
+   - **카메라 및 전처리 코드 실행**
    
       ```bash
       ros2 run turtlebot3_autorace_camera img_publish
@@ -118,10 +118,10 @@
 
 | 단계 | 기법                                   | 목적                   |
 | -- | ------------------------------------ | -------------------- |
-| ①  | CLAHE 히스토그램                       | 국소 대비 향상 + 반사광 보정    |
+| ①  | CLAHE (명암 향상용 히스토그램 균일화)  | 국소 대비 향상 + 반사광 보정    |
 | ②  | convertScaleAbs                      | 밝기/대비 조정    |
 | ③  | 히스토그램 기반 선형 스트레칭       | 전역 대비 향상 + 노이즈 억제       |
-| ④  | HSV 마스킹 + 트랙바 튜닝                     | 실시간 색상 마스크 조정        |
+| ④  | HSV 색상 마스크 추출 + 실시간 트랙바 튜닝   | 실시간 색상 마스크 조정        |
 | ⑤  | Contour 필터링 (`keep_largest_contour`) | 가장 큰 윤곽만 유지 (노이즈 제거) |
 | ⑥  | BEV (Bird Eye View) 변환               | 시점 왜곡 보정 후 라인 직선화    |
 
@@ -149,43 +149,62 @@
 * 차선 라인(노란선, 흰선) 검출 후 중앙선 추정
 * 인식 결과를 토픽 및 시각화 이미지로 발행
 
-**구현 흐름 요약**
+#### ✅ 주요 처리 흐름
 
-| 단계 | 내용                                                                   |
-| -- | -------------------------------------------------------------------- |
-| ①  | `/image_compensated/compressed`, `/white_mask`, `/yellow_mask` 동기 수신 |
-| ②  | BEV 변환 (warpPerspective)                                             |
-| ③  | `cv2.findNonZero()` + `np.polyfit()`로 2차 곡선 피팅                       |
-| ④  | 좌/우 차선 존재 여부 판단 → 중앙선 추정                                             |
-| ⑤  | `cv2.fillPoly`, `polylines`로 시각화                                     |
-| ⑥  | `/lane_center`, `/lane_state`, `/image_lane_detected` 발행             |
+| 단계 | 내용                                                                         |
+| -- | -------------------------------------------------------------------------- |
+| ①  | `/image_compensated/compressed`, `/white_mask`, `/yellow_mask` 세 이미지 동기 수신 |
+| ②  | 차선 영역을 감싸는 ROI(Region of Interest) 시각화                                     |
+| ③  | 원근 제거를 위한 BEV(Bird Eye View) 변환 수행                                         |
+| ④  | 각 마스크 이미지에서 **non-zero 픽셀 좌표** 추출                                          |
+| ⑤  | 기존 피팅 정보 기준으로 `±300px` 내의 픽셀만 선별하여 이차함수로 피팅 (`np.polyfit`)                 |
+| ⑥  | 좌/우 차선의 존재 여부 판단 후 중심선(center line) 추정                                     |
+| ⑦  | 중심선, 차선 영역, 좌/우 차선을 색상 기반으로 시각화                                            |
+| ⑧  | `/lane_center`, `/lane_state`, `/image_lane_detected` 토픽 발행                |
+
+#### 🎯 상태 판단 기준 및 시각화
+
+| 항목     | 조건                      | 색상 (BGR)      |
+| ------ | ----------------------- | ------------- |
+| 노란선 인식 | yellow mask 픽셀 수 > 3000 | (255, 255, 0) |
+| 흰선 인식  | white mask 픽셀 수 > 3000  | (0, 0, 255)   |
+| 중앙선    | 좌/우 차선 평균 or 추정 위치      | (0, 255, 255) |
+| 차선 영역  | 좌/우 차선 사이 영역            | 초록색           |
 
 
-**상태 판단 기준**
-
-* 흰선, 노란선 각각의 픽셀 개수 기준(> 3000)
 * 상태값 예시:
 
   * `lane_state == 2`: 양쪽 차선 모두 인식
   * `lane_state == 1`: 노란선만
   * `lane_state == 3`: 흰선만
 
-**시각화 색상**
 
-* 노란선: (255, 255, 0)
-* 흰선: (0, 0, 255)
-* 중앙선: (0, 255, 255)
-* 차선 영역: 초록색
+#### 🧩 코드 기반 로직 예시
 
-### 📷 시각화 이미지
+```python
+# 이전 피팅 기반 차선 주변 픽셀 선택 후, 새로운 피팅
+lane_inds = ((nonzerox > predicted_x - margin) & (nonzerox < predicted_x + margin))
+new_fit = np.polyfit(y, x, 2)  # 이차 함수 피팅
 
+# 중앙선 추정
+if yellow_detected and white_detected:
+    centerx = np.mean([left_fitx, right_fitx], axis=0)
+elif yellow_detected:
+    centerx = left_fitx + offset  # 기준 보정
+elif white_detected:
+    centerx = right_fitx - offset
+```
+
+#### 🖼️ 결과 이미지
 <img width="732" height="593" alt="image" src="https://github.com/user-attachments/assets/838b6352-29ee-4f19-9520-26c8a87851c8"/>
 
+* BEV 변환 → 라인 피팅 → 중심선 추정 → 시각화 → 역변환 후 합성 이미지 `/image_lane_detected`로 발행
+* `cv2.fillPoly`로 차선 영역 색칠, `cv2.polylines`로 차선 라인 시각화
 
 ---
 ### 3-3. 🤖 상태 기반 자율주행 제어
 
-**구현 노드**: `control_lane.py`
+**구현 코드**: `control_lane.py`
 
 **핵심 로직**
 
@@ -222,77 +241,99 @@ if id == 12:
 
 ## 4. 핵심 코드 구현
 
-### img\_publish (turtlebot3\_autorace\_camera)
+### img\_publish.py
 
-**역할**: 카메라 압축 이미지 토픽 발행<br>
+**역할**: 카메라 원본 영상 압축 이미지로 퍼블리시
 **기능**:
 
-* `img_publish`: 원본 카메라 영상 압축 이미지 토픽 ROS2 퍼블리시
+* 카메라에서 들어오는 원본 영상 프레임을 압축 이미지 토픽으로 ROS2 퍼블리시
 
 ---
 
-### imaeg\_preprocesser & image\_compensation (turtlebot3\_autorace\_camera)
+### image\_preprocesser.py & image\_compensation.py
 
-**역할**: 이미지 전처리 및 HSV 마스킹 + 트랙바 튜닝<br>
+**역할**: 이미지 전처리 및 HSV 기반 색상 마스킹, 트랙바를 통한 파라미터 튜닝 제공<br>
+**주요 전처리 기법 및 기능**:
 
-* **주요 전처리 기법**
+| Python 파일                  | 주요 처리 내용                                          |
+| ----------------------- | ------------------------------------------------- |
+| `image_preprocess.py`   | CLAHE (HSV V채널, LAB L채널), 감마 보정, V채널 억제, 밝기·대비 조정 |
+| `image_compensation.py` | 그레이스케일 히스토그램 누적 분포 분석 및 클리핑 기반 선형 스트레칭 적용         |
 
-| 적용 노드                   | 주요 기능                                     |
-| ----------------------- | ----------------------------------------- |
-| `image_preprocess.py`   | CLAHE(H,V), 감마 보정, V채널 억제, 밝기/대비 조정       |
-| `image_compensation.py` | 그레이스케일 기반 히스토그램 누적 분포 분석 + 클리핑 기반 선형 스트레칭 |
+* CLAHE 적용 대상: HSV 색공간 V 채널, LAB 색공간 L 채널
+* 감마 보정: `adjust_gamma(image, γ=1.6)`
+* 밝기 및 대비 조정: OpenCV `convertScaleAbs` 함수 활용 (alpha, beta 파라미터 적용)
+* 히스토그램 클리핑 기반 선형 스트레칭:
 
-**기능**:
-
-* **CLAHE 적용**: HSV 색공간의 V채널, LAB 색공간의 L채널 대상
-* **감마 보정**: `adjust_gamma(image, γ=1.6)`
-* **밝기/대비 보정**: `convertScaleAbs(img, alpha, beta)`
-* **히스토그램 클리핑 기반 선형 스트레칭**:
-
-  * 누적 히스토그램 분석 후 `min_gray`, `max_gray` 산출
-  * `(alpha, beta)`로 선형 변환
+  * 누적 히스토그램 분석 후 임계값(`min_gray`, `max_gray`) 산출
+  * 산출값으로 픽셀 값 선형 변환 수행 (alpha, beta 활용)
 ---
 
 
-### detect\_lane & detect\_stop\_line (turtlebot3\_autorace\_detect)
+### detect\_lane.py
 
-**역할**: BEV 변환 기반 차선과 횡단보도(정지선) 검출<br>
+**역할**: 이미지 동기화 및 BEV 변환 기반 차선<br>
 **기능**:
-
-* `detect_lane`: BEV 적용 및 차선 중심점 산출 후 `/lane_center` 토픽 발행
-* `detect_stop_line`: 횡단보도 영역 검출 및 조건 만족 시 `/stop_line` 토픽 발행
+  * `/image_compensated/compressed`, `/image_compensated/white_mask/compressed`, `/image_compensated/yellow_mask/compressed`<br>
+    → 3개 이미지 토픽 동기화 수신(`message_filters.ApproximateTimeSynchronizer` 활용)
+  * 보정 이미지와 색상 마스크 입력 → BEV 변환
+  * BEV 변환 영역 ROI로 영역 시각화
+  * 좌우 차선 픽셀 검출 후 2차 다항식 피팅으로 차선 곡선 산출
+  * 차선 상태(양쪽, 한쪽, 없음) 판별 및 중앙 좌표 산출 → `/lane_center` 토픽 발행
+  * 차선 시각화 이미지 생성 및 퍼블리시
 
 ---
+### detect\_stop\_line.py
 
-### control\_lane (turtlebot3\_autorace\_driving)
+**역할**: 횡단보도(정지선) 검출<br>
+**기능**:
+
+  * 원본 영상 하단 ROI 추출 후 이진화 및 윤곽선 검출
+  * 수직 띠 형태 및 흰색 픽셀 수 조건 만족 시 정지선 감지
+  * 감지 여부 `/detect/stopline` Bool 메시지 발행
+
+
+---
+### control\_lane.py
 
 **역할**: FSM 기반 상태 제어 및 PD 제어를 통한 주행 명령 생성<br>
 **기능**:
+* `/lane_state` 구독하여 `이전 상태(prev_lane_state)`와 `현재 상태(curr_lane_state)` 비교 후 상태 전환 처리 로직 구현
 
-* 차선 인식 상태에 따른 주행 복구, 정지, 재개 로직 구현
-* 차선 중심 오차 기반 PD 조향 제어 및 속도 조절 명령 발행
+| 이전 상태 → 현재 | 대응 행동                    |
+| ---------- | ------------------------ |
+| 1→0 or 3→0 | 마지막 유효 center 기준으로 조향 유지 |
+| 2→0        | 즉시 정지 (안전 확보)            |
+| 0→2        | 라인 복귀 시 자동 주행 재개         |
+
+* `/lane_center` 구독하여차선 중심 오차 기반 PD 조향 제어 및 속도 조절 명령 발행
+* `/detect/stopline` 구독하여 정지선 감지 시 차량 정지
+* `/max_vel` 구독으로 최대 속도 반영, 조향 오차에 따라 선속도 제한
+* 계산된 속도 및 조향값을 `/cmd_vel` 토픽에 Twist 메시지로 발행
 
 ---
 
-### aruco\_detector (aruco\_yolo)
+### aruco\_detector.py
 
-**역할**: 카메라 영상 내 ArUco 마커 인식 및 자세 추정<br>
+**역할**: 카메라 영상 내 ArUco 마커 인식 및 3D 위치/자세 추정<br>
 **기능**:
 
-* `detectMarkers()`로 마커 코너 및 ID 추출
-* ID 분기별 작업 명령 발행
-* `estimatePoseSingleMarkers()`로 3D 위치와 자세 추정
+* OpenCV `detectMarkers()`를 통해 마커 코너와 ID 검출
+* 사용자 정의 `estimatePoseSingleMarkers()`로 각 마커의 3D 위치(tvec) 및 회전벡터(rvec) 계산
+* 회전행렬을 오일러 각도로 변환해 마커의 자세 표현
+* 인식된 마커 ID 및 위치 정보를 MarkerArray 메시지로 발행
+* 가장 가까운 마커 정보 로깅
 
 ---
 
-### pick\_and\_place (aruco\_yolo)
+### pick\_and\_place.py
 
 **역할**: 특정 ArUco 마커 인식 시 로봇 팔 픽앤플레이스 수행<br>
 **기능**:
 
-* 마커 ID에 따라 매니퓰레이터 목표 위치 계산 및 이동
-* MoveIt과 연동해 픽업 및 위치 이동 동작 실행
-* 작업 완료 후 복귀 및 대기
+* 감지된 마커 ID 기반 매니퓰레이터 목표 위치 계산
+* MoveIt 연동을 통한 픽업 및 이동 동작 실행
+* 작업 완료 후 초기 위치로 복귀 및 대기 상태 유지
 
 ---
 
@@ -318,7 +359,7 @@ if id == 12:
 ## 7. 성과 및 결과물
 
 * 조명 변화 환경에서도 견고한 차선 인식 성능 확보
-* FSM 기반 제어로 차선 이탈 상황에서 자동 회복 및 정지 흐름 확보
+* FSM 기반 제어로 차선 이탈 상황에서 자동 회복 및 정지 동작 구현
 * ArUco ID 기반 후속 작업 연계 기능 성공 구현
 
 ---
@@ -334,7 +375,7 @@ if id == 12:
 ## 9. 개인적 성찰 및 배운 점
 
 * 실시간 영상처리와 ROS 제어 구조 설계 실전 경험
-* FSM 기반 복구 제어 설계 및 적용 능력 향상
+* FSM 기반 복구 제어 로직을 처음부터 설계하고 실제에 적용한 경험 축적
 * ArUco 인식과 작업 연계 구조 설계 실전 경험
 
 ---

@@ -36,7 +36,7 @@
 
 #### 💡 본인 주요 기여
 
-* 조명과 반사에 강한 영상 전처리 알고리즘 구현 (HSV 마스킹, 히스토그램 스트레칭 등)
+* 조명과 반사에 강한 이미지 전처리 알고리즘 구현 (HSV 마스킹, 히스토그램 스트레칭, BEV 등)
 * 차선 인식 기반 상태 머신(FSM) 주행 복구 및 PD 제어 로직 개발
 * TurtleBot3 시뮬레이션 환경 구성 및 GUI 개발
 
@@ -56,6 +56,7 @@
    
       ```bash
       ros2 run turtlebot3_autorace_camera img_publish
+      ros2 run turtlebot3_autorace_camera image_preprocesser
       ros2 run turtlebot3_autorace_camera image_compensation
       ```
    
@@ -73,6 +74,9 @@
       ros2 run aruco_yolo aruco_detector
       ros2 run aruco_yolo pick_and_place --ros-args -p markerid:=1
       ```
+
+#### 🧭 ROS 통신 구조도(rqt_graph)
+<img width="942" height="208" alt="image" src="https://github.com/user-attachments/assets/b83627b8-9fc2-4d81-9697-682b2972ce9a" />
 
 ---
 
@@ -170,17 +174,27 @@ if id == 12:
 
 ### img\_publish & image\_compensation (turtlebot3\_autorace\_camera)
 
-**역할**: 카메라 영상 수집 및 전처리 수행
+**역할**: 카메라 압축 이미지 토픽 발행<br>
 **기능**:
 
-* `img_publish`: 원본 카메라 영상 ROS2 퍼블리시
-* `image_compensation`: CLAHE, 대비/밝기 조정, HSV 마스킹, 트랙바 기반 실시간 파라미터 튜닝, Contour 필터링을 통한 차선 추출
+* `img_publish`: 원본 카메라 영상 압축 이미지 토픽 ROS2 퍼블리시
 
 ---
 
+### imaeg\_preprocesser & image\_compensation (turtlebot3\_autorace\_camera)
+
+**역할**: 이미지 전처리 및 HSV 마스킹 + 트랙바 튜닝<br>
+**기능**:
+
+* `image_preprocesser`: 압축 이미지 토픽을 받고 CLAHE, 대비/밝기 조정 후 ROS2 퍼블리시
+* `image_compensation`: 선형 히스토그램 스트레칭, HSV 마스킹, 트랙바 기반 실시간 파라미터 튜닝, Contour 필터링을 통한 차선 추출
+
+---
+
+
 ### detect\_lane & detect\_stop\_line (turtlebot3\_autorace\_detect)
 
-**역할**: BEV 변환 기반 차선과 횡단보도(정지선) 검출
+**역할**: BEV 변환 기반 차선과 횡단보도(정지선) 검출<br>
 **기능**:
 
 * `detect_lane`: BEV 적용 및 차선 중심점 산출 후 `/lane_center` 토픽 발행
@@ -190,7 +204,7 @@ if id == 12:
 
 ### control\_lane (turtlebot3\_autorace\_driving)
 
-**역할**: FSM 기반 상태 제어 및 PD 제어를 통한 주행 명령 생성
+**역할**: FSM 기반 상태 제어 및 PD 제어를 통한 주행 명령 생성<br>
 **기능**:
 
 * 차선 인식 상태에 따른 주행 복구, 정지, 재개 로직 구현
@@ -200,7 +214,7 @@ if id == 12:
 
 ### aruco\_detector (aruco\_yolo)
 
-**역할**: 카메라 영상 내 ArUco 마커 인식 및 자세 추정
+**역할**: 카메라 영상 내 ArUco 마커 인식 및 자세 추정<br>
 **기능**:
 
 * `detectMarkers()`로 마커 코너 및 ID 추출
@@ -211,7 +225,7 @@ if id == 12:
 
 ### pick\_and\_place (aruco\_yolo)
 
-**역할**: 특정 ArUco 마커 인식 시 로봇 팔 픽앤플레이스 수행
+**역할**: 특정 ArUco 마커 인식 시 로봇 팔 픽앤플레이스 수행<br>
 **기능**:
 
 * 마커 ID에 따라 매니퓰레이터 목표 위치 계산 및 이동
@@ -225,6 +239,7 @@ if id == 12:
 | 문제                   | 해결 전략                                       |
 | -------------------- | ------------------------------------------- |
 | 조명·반사 등으로 인한 마스크 불안정 | CLAHE + 선형 히스토그램 스트레칭 + HSV 튜닝 기반 견고 마스크 구축 |
+| 차선 외 다른 노이즈 필터링 | 이미지 컨투어 기법을 사용하여 노이즈 오인식 방지 |
 | 차선 일부 상실 시 주행 흐름 불안정 | FSM 기반 자동 복구 로직 및 PD 조향 안정화                 |
 | 마커 인식 중 반복 오작동 발생    | ID 필터링 및 동작 간 시간 간격 조건 추가로 오작동 방지           |
 
@@ -267,7 +282,3 @@ if id == 12:
 * HSV 파라미터 자동 튜닝 기능 추가
 * ArUco 인식 시 음성 안내 및 GUI 피드백 적용
 * 작업팔, 리프팅 모듈과 추가 연동 실험
-
----
-
-필요 시 추가 요청 주세요!

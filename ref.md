@@ -241,7 +241,7 @@ if id == 12:
 
 ## 4. 핵심 코드 구현
 
-### `img\_publish.py`
+### `img_publish.py`
 
 **역할**: 카메라 원본 영상 압축 이미지로 퍼블리시
 **기능**:
@@ -250,10 +250,11 @@ if id == 12:
 
 ---
 
-### `image\_preprocesser.py` & `image\_compensation.py`
+### `image_preprocesser.py` & `image_compensation.py`
 
 **역할**: 이미지 전처리 및 HSV 기반 색상 마스킹, 트랙바를 통한 파라미터 튜닝 제공<br>
-**주요 전처리 기법 및 기능**:
+**기능**:
+ * **주요 전처리 기법**
 
 | Python 파일                  | 주요 처리 내용                                          |
 | ----------------------- | ------------------------------------------------- |
@@ -270,7 +271,7 @@ if id == 12:
 ---
 
 
-### `detect\_lane.py`
+### `detect_lane.py`
 
 **역할**: 이미지 동기화 및 BEV 변환 기반 차선<br>
 **기능**:
@@ -283,7 +284,7 @@ if id == 12:
   * 차선 시각화 이미지 생성 및 퍼블리시
 
 ---
-### `detect\_stop\_line.py`
+### `detect_stop_line.py`
 
 **역할**: 횡단보도(정지선) 검출<br>
 **기능**:
@@ -294,7 +295,7 @@ if id == 12:
 
 
 ---
-### `control\_lane.py`
+### `control_lane.py`
 
 **역할**: FSM 기반 상태 제어 및 PD 제어를 통한 주행 명령 생성<br>
 **기능**:
@@ -313,7 +314,7 @@ if id == 12:
 
 ---
 
-### `aruco\_detector.py`
+### `aruco_detector.py`
 
 **역할**: 카메라 영상 내 ArUco 마커 인식 및 3D 위치/자세 추정<br>
 **기능**:
@@ -326,7 +327,7 @@ if id == 12:
 
 ---
 
-### `pick\_and\_place.py`
+### `pick_and_place.py`
 
 **역할**: 특정 ArUco 마커 인식 시 로봇 팔 픽앤플레이스 수행<br>
 **기능**:

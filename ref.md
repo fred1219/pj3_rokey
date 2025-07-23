@@ -5,25 +5,25 @@
 
 ---
 
-## 📑 프로젝트 개요
+### 📑 프로젝트 개요
 
 * **주제**: TurtleAutonomy (모바일 매니퓰레이터 서비스 로봇)
 * **목표**: 차선 기반 자율주행 + ArUco 기반 물체 인식 및 작업 수행 자동화
 * **형태**: TurtleBot3 Waffle + 매니퓰레이터 + 카메라 결합 모바일 로봇
 
----
+<br>
 
-### 🧑‍🤝‍🧑 팀원 역할 분담
+#### 🧑‍🤝‍🧑 팀원 역할 분담
 
 | 이름           | 역할                                        |
 | ------------ | ----------------------------------------- |
-| **이세현(작성자)** | **차선 인식 및 전처리 알고리즘 구현, 시뮬 환경 구성, GUI 제작** |
-| 강인우          | 시뮬레이션 제어 태스크, 이미지 전처리, ROS2 기반 제어 시스템 구현  |
+| **이세현(작성자)** | **이미지 전처리, 차선 주행 알고리즘 구현, 시뮬 환경 구성, GUI 제작** |
+| 강인우          | 시뮬레이션 제어 태스크, 이미지 전처리, 횡단보도 정지 알고리즘 구현  |
 | 이형연          | ArUco 마커 인식, 매니퓰레이터 제어 로직 및 표지판 인식 학습     |
 
----
+<br>
 
-### 📅 작업 일정
+#### 📅 작업 일정
 
 | 기간           | 작업 내용                        |
 | ------------ | ---------------------------- |
@@ -31,6 +31,48 @@
 | 6/10 \~ 6/13 | 시뮬레이션 테스트 및 차선 인식/주행 구현      |
 | 6/14 \~ 6/18 | ArUco 인식 및 로봇팔 제어 연동, 통합 테스트 |
 | 6/19         | GUI 구성, 영상 시연 촬영 및 보고서 작성    |
+
+<br>
+
+#### 💡 본인 주요 기여
+
+* 조명과 반사에 강한 영상 전처리 알고리즘 구현 (HSV 마스킹, 히스토그램 스트레칭 등)
+* 차선 인식 기반 상태 머신(FSM) 주행 복구 및 PD 제어 로직 개발
+* TurtleBot3 시뮬레이션 환경 구성 및 GUI 개발
+
+---
+
+#### 🛠 기본 구성 실행 순서
+
+   - **로봇 bringup 및 MoveIt 실행**
+   
+      ```bash
+      ros2 launch turtlebot3_manipulation_bringup hardware.launch.py
+      ros2 launch turtlebot3_manipulation_moveit_config moveit_core.launch.py
+      ros2 run turtlebot_moveit turtlebot_arm_controller
+      ```
+   
+   - **카메라 및 전처리 노드 실행**
+   
+      ```bash
+      ros2 run turtlebot3_autorace_camera img_publish
+      ros2 run turtlebot3_autorace_camera image_compensation
+      ```
+   
+   - **라인 검출 및 주행 제어**
+   
+      ```bash
+      ros2 run turtlebot3_autorace_detect detect_lane
+      ros2 run turtlebot3_autorace_detect detect_stop_line
+      ros2 run turtlebot3_autorace_driving control_lane
+      ```
+   
+   - **AR 마커 기반 픽앤플레이스 동작 (선택적 실행)**
+   
+      ```bash
+      ros2 run aruco_yolo aruco_detector
+      ros2 run aruco_yolo pick_and_place --ros-args -p markerid:=1
+      ```
 
 ---
 
@@ -59,48 +101,7 @@
 | 이미지 전송 | image\_transport (compressed)     |
 | 제어 구조  | State Machine + PD 제어             |
 
----
 
-### 💡 본인 주요 기여
-
-* 조명과 반사에 강한 영상 전처리 알고리즘 구현 (CLAHE, HSV 마스킹, 히스토그램 스트레칭 등)
-* 차선 인식 기반 상태 머신(FSM) 주행 복구 및 PD 제어 로직 개발
-* TurtleBot3 시뮬레이션 환경 구성 및 GUI 개발
-* ArUco 마커 기반 픽앤플레이스 작업 연동
-
----
-
-### 🛠 기본 구성 실행 순서
-
-1. **로봇 bringup 및 MoveIt 실행**
-
-   ```bash
-   ros2 launch turtlebot3_manipulation_bringup hardware.launch.py
-   ros2 launch turtlebot3_manipulation_moveit_config moveit_core.launch.py
-   ros2 run turtlebot_moveit turtlebot_arm_controller
-   ```
-
-2. **카메라 및 전처리 노드 실행**
-
-   ```bash
-   ros2 run turtlebot3_autorace_camera img_publish
-   ros2 run turtlebot3_autorace_camera image_compensation
-   ```
-
-3. **라인 검출 및 주행 제어**
-
-   ```bash
-   ros2 run turtlebot3_autorace_detect detect_lane
-   ros2 run turtlebot3_autorace_detect detect_stop_line
-   ros2 run turtlebot3_autorace_driving control_lane
-   ```
-
-4. **AR 마커 기반 픽앤플레이스 동작 (선택적 실행)**
-
-   ```bash
-   ros2 run aruco_yolo aruco_detector
-   ros2 run aruco_yolo pick_and_place --ros-args -p markerid:=1
-   ```
 
 ---
 

@@ -1,5 +1,3 @@
-# TurtleAutonomy: 차선 기반 자율주행 + ArUco 작업 수행 서비스 로봇
-
 **ROS 2 + OpenCV 기반으로, 차선 인식 → 자율주행 → ArUco 마커 감지 후 작업 수행까지 연결되는 모바일 매니퓰레이터 시스템을 구현했습니다.**
 **비정형 환경에서도 견고한 주행을 위해 전처리 기반 차선 인식 개선과 상태 기반 주행 복구 제어를 적용하였고, 미션 기반 이동 후 ArUco 마커를 인식하여 후속 작업을 수행하도록 구현했습니다.**
 
@@ -120,43 +118,95 @@
 
 | 단계 | 기법                                   | 목적                   |
 | -- | ------------------------------------ | -------------------- |
-| ①  | CLAHE                                | 국소 대비 향상 및 반사광 보정    |
-| ②  | convertScaleAbs                      | 전체 밝기 안정화 및 대비 조정    |
-| ③  | 선형 히스토그램 스트레칭                        | 대비 향상 + 노이즈 억제       |
+| ①  | CLAHE 히스토그램                       | 국소 대비 향상 + 반사광 보정    |
+| ②  | convertScaleAbs                      | 밝기/대비 조정    |
+| ③  | 히스토그램 기반 선형 스트레칭       | 전역 대비 향상 + 노이즈 억제       |
 | ④  | HSV 마스킹 + 트랙바 튜닝                     | 실시간 색상 마스크 조정        |
 | ⑤  | Contour 필터링 (`keep_largest_contour`) | 가장 큰 윤곽만 유지 (노이즈 제거) |
 | ⑥  | BEV (Bird Eye View) 변환               | 시점 왜곡 보정 후 라인 직선화    |
 
-**keep\_largest\_contour 함수**는 작은 반사 노이즈를 필터링하고 차선만 유지합니다.
+**keep\_largest\_contour 함수**는 작은 반사 노이즈를 필터링하고 차선만 유지합니다.<br>
+<br>
+
+### 📷 이미지 전처리 결과
+
+<img width="1009" height="301" alt="image" src="https://github.com/user-attachments/assets/f5d9fbff-5f7b-47ac-8d54-3593dd6536bd" />
+
+                        **< ① ~ ③ 단계 적용 결과 >**
+
+<br>
+
+<img width="1121" height="429" alt="image" src="https://github.com/user-attachments/assets/8feccc15-7802-4f3d-9ad1-7c55307f70b8" />
+
+                        **< ① ~ ⑥ 단계 적용 결과 >**
 
 ---
 
-### 3-2. 🤖 상태 기반 자율주행 제어 (`ControlLane`)
+### 3-2. 📏 차선 인식 및 중심선 시각화
 
-* **문제점**
-  차선 일부 상실 시 오작동, 전체 상실 시 시스템 복귀 미비
+**역할**
 
-* **해결 전략**: State 기반 FSM 구조로 복구 자동화
+* 차선 라인(노란선, 흰선) 검출 후 중앙선 추정
+* 인식 결과를 토픽 및 시각화 이미지로 발행
 
-| 이전 상태 → 현재 | 대응 행동                    |
-| ---------- | ------------------------ |
-| 1→0 or 3→0 | 마지막 유효 center 기준으로 조향 유지 |
-| 2→0        | 즉시 정지 (안전 확보)            |
-| 0→2        | 라인 복귀 시 자동 주행 재개         |
+**구현 흐름 요약**
 
-**PD 제어 로직 예시**:
+| 단계 | 내용                                                                   |
+| -- | -------------------------------------------------------------------- |
+| ①  | `/image_compensated/compressed`, `/white_mask`, `/yellow_mask` 동기 수신 |
+| ②  | BEV 변환 (warpPerspective)                                             |
+| ③  | `cv2.findNonZero()` + `np.polyfit()`로 2차 곡선 피팅                       |
+| ④  | 좌/우 차선 존재 여부 판단 → 중앙선 추정                                             |
+| ⑤  | `cv2.fillPoly`, `polylines`로 시각화                                     |
+| ⑥  | `/lane_center`, `/lane_state`, `/image_lane_detected` 발행             |
 
-```python
-Kp = 0.0025; Kd = 0.007  
-angular_z = Kp * error + Kd * (error - last_error)
-```
 
-* 중심 오차 작을수록 직진, 클수록 회전과 감속 증가
-* FSM 구조를 통해 이탈 후 복귀, 정지, 재시작 논리를 자동화
+**상태 판단 기준**
+
+* 흰선, 노란선 각각의 픽셀 개수 기준(> 3000)
+* 상태값 예시:
+
+  * `lane_state == 2`: 양쪽 차선 모두 인식
+  * `lane_state == 1`: 노란선만
+  * `lane_state == 3`: 흰선만
+
+**시각화 색상**
+
+* 노란선: (255, 255, 0)
+* 흰선: (0, 0, 255)
+* 중앙선: (0, 255, 255)
+* 차선 영역: 초록색
+
+### 📷 시각화 이미지
+
+<img width="732" height="593" alt="image" src="https://github.com/user-attachments/assets/838b6352-29ee-4f19-9520-26c8a87851c8"/>
+
+
+---
+### 3-3. 🤖 상태 기반 자율주행 제어
+
+**구현 노드**: `control_lane.py`
+
+**핵심 로직**
+
+* Finite State Machine(FSM) 기반
+* 상태별 행동 정의:
+
+  * `Normal`: 차선 따라 주행
+  * `Lost`: 차선 상실 → 회복 또는 정지
+  * `Stop`: 정지선 인식 시 정지
+
+**제어 알고리즘**
+
+* PD 제어 기반 조향 제어
+
+  * 오차(`center - 이미지 중앙`) 기반
+  * `steering = Kp * error + Kd * d(error)`
+* 속도 조절: 차선 인식 상태에 따라 감속 또는 정지
 
 ---
 
-### 3-3. 🎯 ArUco 마커 기반 작업 수행
+### 3-4. 🎯 ArUco 마커 기반 작업 수행
 
 * 주행 도중 ArUco 마커를 인식할 경우 ID 기반으로 작업 수행 로직 분기
 * 예: ID 12 → 정지 후 작업팔 수행, ID 14 → 회전 후 대기
@@ -172,7 +222,7 @@ if id == 12:
 
 ## 4. 핵심 코드 구현
 
-### img\_publish & image\_compensation (turtlebot3\_autorace\_camera)
+### img\_publish (turtlebot3\_autorace\_camera)
 
 **역할**: 카메라 압축 이미지 토픽 발행<br>
 **기능**:
@@ -184,11 +234,23 @@ if id == 12:
 ### imaeg\_preprocesser & image\_compensation (turtlebot3\_autorace\_camera)
 
 **역할**: 이미지 전처리 및 HSV 마스킹 + 트랙바 튜닝<br>
+
+* **주요 전처리 기법**
+
+| 적용 노드                   | 주요 기능                                     |
+| ----------------------- | ----------------------------------------- |
+| `image_preprocess.py`   | CLAHE(H,V), 감마 보정, V채널 억제, 밝기/대비 조정       |
+| `image_compensation.py` | 그레이스케일 기반 히스토그램 누적 분포 분석 + 클리핑 기반 선형 스트레칭 |
+
 **기능**:
 
-* `image_preprocesser`: 압축 이미지 토픽을 받고 CLAHE, 대비/밝기 조정 후 ROS2 퍼블리시
-* `image_compensation`: 선형 히스토그램 스트레칭, HSV 마스킹, 트랙바 기반 실시간 파라미터 튜닝, Contour 필터링을 통한 차선 추출
+* **CLAHE 적용**: HSV 색공간의 V채널, LAB 색공간의 L채널 대상
+* **감마 보정**: `adjust_gamma(image, γ=1.6)`
+* **밝기/대비 보정**: `convertScaleAbs(img, alpha, beta)`
+* **히스토그램 클리핑 기반 선형 스트레칭**:
 
+  * 누적 히스토그램 분석 후 `min_gray`, `max_gray` 산출
+  * `(alpha, beta)`로 선형 변환
 ---
 
 

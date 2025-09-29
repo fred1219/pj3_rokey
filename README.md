@@ -9,6 +9,12 @@
 * 🛠 **사용 기술**: ROS 2, OpenCV, ArUco, MoveIt, RViz, Python, Ubuntu 22.04
 * ✅ **주요 기능**: 차선 인식 기반 자율주행, ArUco 마커 인식, 매니퓰레이터 제어, GUI 인터페이스
 
+### 🎥 시연 영상
+
+[![시연 영상 보기](https://img.youtube.com/vi/CiJqKnJTLl8/0.jpg)](https://youtu.be/CiJqKnJTLl8)
+
+📄 [PDF 소개 자료](Turtobot.pdf)  
+
 ---
 
 ## 📑 프로젝트 개요

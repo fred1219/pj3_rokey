@@ -58,7 +58,8 @@
 
 ### 🧭 프로세스
 
-![모바일 매니퓰레이터 동작 구조](https://github.com/user-attachments/assets/example_turtlebot_structure.jpg)
+<img width="1189" height="265" alt="image" src="https://github.com/user-attachments/assets/ee93e934-9d7e-4ccc-8efc-04e7c0d414e3" />
+
 
 ---
 

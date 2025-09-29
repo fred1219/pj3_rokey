@@ -250,8 +250,6 @@ elif white_detected:
 * 자세 추정을 위해 `estimatePoseSingleMarkers` 활용
 
 
-
-
 #### ⚙️ 구현 내용
 > MoveIt + ROS 2 비동기 서비스 요청 구조<br>
 > cmd 값을 통해 로봇팔 동작/그리퍼 제어 분기<br>

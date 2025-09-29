@@ -249,6 +249,22 @@ elif white_detected:
 * 예: ID 12 → 정지 후 작업팔 수행, ID 14 → 회전 후 대기
 * 자세 추정을 위해 `estimatePoseSingleMarkers` 활용
 
+
+
+
+#### ⚙️ 구현 내용
+> MoveIt + ROS 2 비동기 서비스 요청 구조<br>
+> cmd 값을 통해 로봇팔 동작/그리퍼 제어 분기<br>
+1. 그리퍼 열기<br>
+2. 마커 위로 이동<br>
+3. 집을 수 있는 위치로 이동<br>
+4. 그리퍼 닫기<br>
+5. 위로 올리기<br>
+6. 컨베이어 상단 위치 이동<br>
+7. 적재 위치 이동<br>
+8. 그리퍼 열기<br>
+9. 복귀<br>
+
 ```python
 corners, ids, _ = aruco.detectMarkers(...)
 if id == 12:
